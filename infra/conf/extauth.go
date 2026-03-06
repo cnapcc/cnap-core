@@ -14,7 +14,7 @@ type ExtAuthConfig struct {
 	Secret     string `json:"secret"`
 }
 
-func (c *ExtAuthConfig) Build() proto.Message {
+func (c *ExtAuthConfig) Build() (proto.Message, error) {
 	return &extauth.Config{
 		Url:        c.Url,
 		Timeout:    c.Timeout,
@@ -22,5 +22,5 @@ func (c *ExtAuthConfig) Build() proto.Message {
 		Heartbeat:  c.Heartbeat,
 		Disconnect: c.Disconnect,
 		Secret:     c.Secret,
-	}
+	}, nil
 }
