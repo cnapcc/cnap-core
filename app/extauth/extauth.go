@@ -2,6 +2,7 @@ package extauth
 
 import (
 	"context"
+	"errors"
 	sync "sync"
 	"time"
 
@@ -52,6 +53,13 @@ func (i *Instance) getConnectionInfo(ctx context.Context) connectionInfo {
 
 // New creates a new Instance
 func New(ctx context.Context, config *Config) (*Instance, error) {
+	if config == nil {
+		return nil, errors.New("extauth: config is nil")
+	}
+	if config.Url == "" {
+		return nil, errors.New("extauth: url is required")
+	}
+
 	return &Instance{
 		url:        config.Url,
 		secret:     config.Secret,
@@ -97,7 +105,7 @@ func (i *Instance) Connect(credential string, connectionID string, ctx context.C
 	}
 
 	// Send request to external API
-	resp, err := i.sendRequest(Request{
+	resp, err := i.sendRequest(ctx, Request{
 		Type:         "connect",
 		Credential:   credential,
 		ConnectionID: connectionID,
@@ -155,7 +163,7 @@ func (i *Instance) Watch(credential string, connectionID string, ctx context.Con
 
 func (i *Instance) Heartbeat(credential string, connectionID string, ctx context.Context) {
 	info := i.getConnectionInfo(ctx)
-	resp, err := i.sendRequest(Request{
+	_, err := i.sendRequest(ctx, Request{
 		Type:         "heartbeat",
 		Credential:   credential,
 		ConnectionID: connectionID,
@@ -165,9 +173,7 @@ func (i *Instance) Heartbeat(credential string, connectionID string, ctx context
 		LocalIP:      info.localIP,
 	})
 
-	// Remove User from cache if backend didn't respond with 200 OK
-	// If err != nil, it's other type of error, don't touch cache
-	if resp == nil && err == nil {
+	if errors.Is(err, ErrAuthDenied) {
 		key := cacheKey{credential: credential, ip: info.sourceIP}
 		i.cache.Delete(key)
 	}
@@ -176,7 +182,11 @@ func (i *Instance) Heartbeat(credential string, connectionID string, ctx context
 func (i *Instance) Disconnect(credential string, connectionID string, ctx context.Context) {
 	info := i.getConnectionInfo(ctx)
 
-	i.sendRequest(Request{
+	// Using old context results in immediate cancellation, so create a new context with timeout
+	disconnectCtx, cancel := context.WithTimeout(context.Background(), i.timeout)
+	defer cancel()
+
+	i.sendRequest(disconnectCtx, Request{
 		Type:         "disconnect",
 		Credential:   credential,
 		ConnectionID: connectionID,
