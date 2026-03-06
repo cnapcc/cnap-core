@@ -4,11 +4,16 @@ package xray.app.extauth;
 
 option go_package = "github.com/xtls/xray-core/app/extauth";
 
+message Notifications {
+  bool connect = 1;
+  int32 heartbeat = 2;
+  bool disconnect = 3;
+}
+
 message Config {
-    string url = 1;
-    string secret = 2;
-    int32 timeout = 3;
-    int32 heartbeat = 4;
-    int32 ttl = 5;
-    bool disconnect = 6;
+  string url = 1;
+  string secret = 2;
+  int32 timeout = 3;
+  int32 ttl = 4;
+  Notifications notifications = 5;
 }
