@@ -63,14 +63,19 @@ func New(ctx context.Context, config *Config) (*Instance, error) {
 		return nil, errors.New("extauth: url is required")
 	}
 
+	notifications := config.Notifications
+	if notifications == nil {
+		notifications = &Notifications{}
+	}
+
 	return &Instance{
 		url:              config.Url,
 		secret:           config.Secret,
 		timeout:          time.Duration(config.Timeout) * time.Second,
 		ttl:              time.Duration(config.Ttl) * time.Second,
-		notifyConnect:    config.Notifications.Connect,
-		notifyHeartbeat:  time.Duration(config.Notifications.Heartbeat) * time.Second,
-		notifyDisconnect: config.Notifications.Disconnect,
+		notifyConnect:    notifications.Connect,
+		notifyHeartbeat:  time.Duration(notifications.Heartbeat) * time.Second,
+		notifyDisconnect: notifications.Disconnect,
 	}, nil
 }
 
@@ -167,7 +172,7 @@ func (i *Instance) Connect(credential string, connectionID string, ctx context.C
 	}
 
 	if i.notifyConnect {
-		defer i.sendRequest(ctx, Request{
+		req := Request{
 			Type:         "connect",
 			Credential:   credential,
 			ConnectionID: connectionID,
@@ -175,7 +180,18 @@ func (i *Instance) Connect(credential string, connectionID string, ctx context.C
 			InboundTag:   info.inboundTag,
 			SourceIP:     info.sourceIP,
 			LocalIP:      info.localIP,
-		})
+		}
+
+		// Creating new context in case of possible context close like in disconnect
+		go func(r Request) {
+			timeout := i.timeout
+			if timeout <= 0 {
+				timeout = 5 * time.Second
+			}
+			notifyCtx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			_, _ = i.sendRequest(notifyCtx, r)
+		}(req)
 	}
 
 	if i.notifyHeartbeat > 0 || i.notifyDisconnect {
