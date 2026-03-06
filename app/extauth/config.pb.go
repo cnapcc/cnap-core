@@ -21,21 +21,80 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Notifications struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connect       bool                   `protobuf:"varint,1,opt,name=connect,proto3" json:"connect,omitempty"`
+	Heartbeat     int32                  `protobuf:"varint,2,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
+	Disconnect    bool                   `protobuf:"varint,3,opt,name=disconnect,proto3" json:"disconnect,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Notifications) Reset() {
+	*x = Notifications{}
+	mi := &file_app_extauth_config_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Notifications) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Notifications) ProtoMessage() {}
+
+func (x *Notifications) ProtoReflect() protoreflect.Message {
+	mi := &file_app_extauth_config_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Notifications.ProtoReflect.Descriptor instead.
+func (*Notifications) Descriptor() ([]byte, []int) {
+	return file_app_extauth_config_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Notifications) GetConnect() bool {
+	if x != nil {
+		return x.Connect
+	}
+	return false
+}
+
+func (x *Notifications) GetHeartbeat() int32 {
+	if x != nil {
+		return x.Heartbeat
+	}
+	return 0
+}
+
+func (x *Notifications) GetDisconnect() bool {
+	if x != nil {
+		return x.Disconnect
+	}
+	return false
+}
+
 type Config struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
 	Timeout       int32                  `protobuf:"varint,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
-	Heartbeat     int32                  `protobuf:"varint,4,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
-	Ttl           int32                  `protobuf:"varint,5,opt,name=ttl,proto3" json:"ttl,omitempty"`
-	Disconnect    bool                   `protobuf:"varint,6,opt,name=disconnect,proto3" json:"disconnect,omitempty"`
+	Ttl           int32                  `protobuf:"varint,4,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	Notifications *Notifications         `protobuf:"bytes,5,opt,name=notifications,proto3" json:"notifications,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
 	*x = Config{}
-	mi := &file_app_extauth_config_proto_msgTypes[0]
+	mi := &file_app_extauth_config_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +106,7 @@ func (x *Config) String() string {
 func (*Config) ProtoMessage() {}
 
 func (x *Config) ProtoReflect() protoreflect.Message {
-	mi := &file_app_extauth_config_proto_msgTypes[0]
+	mi := &file_app_extauth_config_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +119,7 @@ func (x *Config) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Config.ProtoReflect.Descriptor instead.
 func (*Config) Descriptor() ([]byte, []int) {
-	return file_app_extauth_config_proto_rawDescGZIP(), []int{0}
+	return file_app_extauth_config_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Config) GetUrl() string {
@@ -84,13 +143,6 @@ func (x *Config) GetTimeout() int32 {
 	return 0
 }
 
-func (x *Config) GetHeartbeat() int32 {
-	if x != nil {
-		return x.Heartbeat
-	}
-	return 0
-}
-
 func (x *Config) GetTtl() int32 {
 	if x != nil {
 		return x.Ttl
@@ -98,27 +150,30 @@ func (x *Config) GetTtl() int32 {
 	return 0
 }
 
-func (x *Config) GetDisconnect() bool {
+func (x *Config) GetNotifications() *Notifications {
 	if x != nil {
-		return x.Disconnect
+		return x.Notifications
 	}
-	return false
+	return nil
 }
 
 var File_app_extauth_config_proto protoreflect.FileDescriptor
 
 const file_app_extauth_config_proto_rawDesc = "" +
 	"\n" +
-	"\x18app/extauth/config.proto\x12\x10xray.app.extauth\"\x9c\x01\n" +
+	"\x18app/extauth/config.proto\x12\x10xray.app.extauth\"g\n" +
+	"\rNotifications\x12\x18\n" +
+	"\aconnect\x18\x01 \x01(\bR\aconnect\x12\x1c\n" +
+	"\theartbeat\x18\x02 \x01(\x05R\theartbeat\x12\x1e\n" +
+	"\n" +
+	"disconnect\x18\x03 \x01(\bR\n" +
+	"disconnect\"\xa5\x01\n" +
 	"\x06Config\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
 	"\x06secret\x18\x02 \x01(\tR\x06secret\x12\x18\n" +
-	"\atimeout\x18\x03 \x01(\x05R\atimeout\x12\x1c\n" +
-	"\theartbeat\x18\x04 \x01(\x05R\theartbeat\x12\x10\n" +
-	"\x03ttl\x18\x05 \x01(\x05R\x03ttl\x12\x1e\n" +
-	"\n" +
-	"disconnect\x18\x06 \x01(\bR\n" +
-	"disconnectB'Z%github.com/xtls/xray-core/app/extauthb\x06proto3"
+	"\atimeout\x18\x03 \x01(\x05R\atimeout\x12\x10\n" +
+	"\x03ttl\x18\x04 \x01(\x05R\x03ttl\x12E\n" +
+	"\rnotifications\x18\x05 \x01(\v2\x1f.xray.app.extauth.NotificationsR\rnotificationsB'Z%github.com/xtls/xray-core/app/extauthb\x06proto3"
 
 var (
 	file_app_extauth_config_proto_rawDescOnce sync.Once
@@ -132,16 +187,18 @@ func file_app_extauth_config_proto_rawDescGZIP() []byte {
 	return file_app_extauth_config_proto_rawDescData
 }
 
-var file_app_extauth_config_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_app_extauth_config_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_app_extauth_config_proto_goTypes = []any{
-	(*Config)(nil), // 0: xray.app.extauth.Config
+	(*Notifications)(nil), // 0: xray.app.extauth.Notifications
+	(*Config)(nil),        // 1: xray.app.extauth.Config
 }
 var file_app_extauth_config_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: xray.app.extauth.Config.notifications:type_name -> xray.app.extauth.Notifications
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_app_extauth_config_proto_init() }
@@ -155,7 +212,7 @@ func file_app_extauth_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_app_extauth_config_proto_rawDesc), len(file_app_extauth_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

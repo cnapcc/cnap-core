@@ -13,15 +13,16 @@ import (
 
 // ExtAuth module
 type Instance struct {
-	url           string
-	secret        string
-	timeout       time.Duration
-	heartbeat     time.Duration
-	ttl           time.Duration
-	disconnect    bool
-	cache         sync.Map
-	janitorCtx    context.Context
-	janitorCancel context.CancelFunc
+	url              string
+	secret           string
+	timeout          time.Duration
+	ttl              time.Duration
+	notifyConnect    bool
+	notifyHeartbeat  time.Duration
+	notifyDisconnect bool
+	cache            sync.Map
+	janitorCtx       context.Context
+	janitorCancel    context.CancelFunc
 }
 
 type cacheKey struct {
@@ -63,12 +64,13 @@ func New(ctx context.Context, config *Config) (*Instance, error) {
 	}
 
 	return &Instance{
-		url:        config.Url,
-		secret:     config.Secret,
-		timeout:    time.Duration(config.Timeout) * time.Second,
-		heartbeat:  time.Duration(config.Heartbeat) * time.Second,
-		ttl:        time.Duration(config.Ttl) * time.Second,
-		disconnect: config.Disconnect,
+		url:              config.Url,
+		secret:           config.Secret,
+		timeout:          time.Duration(config.Timeout) * time.Second,
+		ttl:              time.Duration(config.Ttl) * time.Second,
+		notifyConnect:    config.Notifications.Connect,
+		notifyHeartbeat:  time.Duration(config.Notifications.Heartbeat) * time.Second,
+		notifyDisconnect: config.Notifications.Disconnect,
 	}, nil
 }
 
@@ -123,47 +125,60 @@ func init() {
 func (i *Instance) Connect(credential string, connectionID string, ctx context.Context) *protocol.MemoryUser {
 	info := i.getConnectionInfo(ctx)
 
-	// Check User in cache
+	var user *protocol.MemoryUser
 	key := cacheKey{credential: credential, ip: info.sourceIP}
+
+	// Check cache for authorization only
 	if cached, ok := i.cache.Load(key); ok {
 		entry := cached.(*cacheEntry)
 		if time.Now().Before(entry.expiresAt) {
-			if i.heartbeat > 0 || i.disconnect {
-				go i.Watch(credential, connectionID, ctx)
-			}
-			return entry.user
+			user = entry.user
+		} else {
+			i.cache.Delete(key)
 		}
-		i.cache.Delete(key)
 	}
 
-	// Send request to external API
-	resp, err := i.sendRequest(ctx, Request{
-		Type:         "connect",
-		Credential:   credential,
-		ConnectionID: connectionID,
-		Protocol:     info.protocolName,
-		InboundTag:   info.inboundTag,
-		SourceIP:     info.sourceIP,
-		LocalIP:      info.localIP,
-	})
-	if err != nil || resp == nil || resp.User == nil {
-		return nil
+	// If not in cache, go to backend for authorization
+	if user == nil {
+		resp, err := i.sendRequest(ctx, Request{
+			Type:         "authorization",
+			Credential:   credential,
+			ConnectionID: connectionID,
+			Protocol:     info.protocolName,
+			InboundTag:   info.inboundTag,
+			SourceIP:     info.sourceIP,
+			LocalIP:      info.localIP,
+		})
+		if err != nil || resp == nil || resp.User == nil {
+			return nil
+		}
+
+		// Save user to cache
+		user = &protocol.MemoryUser{
+			Email: resp.User.Email,
+			Level: resp.User.Level,
+		}
+		if i.ttl > 0 {
+			i.cache.Store(key, &cacheEntry{
+				user:      user,
+				expiresAt: time.Now().Add(i.ttl),
+			})
+		}
 	}
 
-	// Save User to cache
-	user := &protocol.MemoryUser{
-		Email: resp.User.Email,
-		Level: resp.User.Level,
-	}
-	if i.ttl > 0 {
-		i.cache.Store(key, &cacheEntry{
-			user:      user,
-			expiresAt: time.Now().Add(i.ttl),
+	if i.notifyConnect {
+		defer i.sendRequest(ctx, Request{
+			Type:         "connect",
+			Credential:   credential,
+			ConnectionID: connectionID,
+			Protocol:     info.protocolName,
+			InboundTag:   info.inboundTag,
+			SourceIP:     info.sourceIP,
+			LocalIP:      info.localIP,
 		})
 	}
 
-	// Run Watch only if there is heartbeat or disconnect enabled
-	if i.heartbeat > 0 || i.disconnect {
+	if i.notifyHeartbeat > 0 || i.notifyDisconnect {
 		go i.Watch(credential, connectionID, ctx)
 	}
 
@@ -171,21 +186,21 @@ func (i *Instance) Connect(credential string, connectionID string, ctx context.C
 }
 
 func (i *Instance) Watch(credential string, connectionID string, ctx context.Context) {
-	if i.heartbeat <= 0 {
+	if i.notifyHeartbeat <= 0 {
 		<-ctx.Done()
-		if i.disconnect {
+		if i.notifyDisconnect {
 			i.Disconnect(credential, connectionID, ctx)
 		}
 		return
 	}
 
-	ticker := time.NewTicker(i.heartbeat)
+	ticker := time.NewTicker(i.notifyHeartbeat)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			if i.disconnect {
+			if i.notifyDisconnect {
 				i.Disconnect(credential, connectionID, ctx)
 			}
 			return
