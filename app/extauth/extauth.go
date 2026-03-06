@@ -13,13 +13,15 @@ import (
 
 // ExtAuth module
 type Instance struct {
-	url        string
-	secret     string
-	timeout    time.Duration
-	heartbeat  time.Duration
-	ttl        time.Duration
-	disconnect bool
-	cache      sync.Map
+	url           string
+	secret        string
+	timeout       time.Duration
+	heartbeat     time.Duration
+	ttl           time.Duration
+	disconnect    bool
+	cache         sync.Map
+	janitorCtx    context.Context
+	janitorCancel context.CancelFunc
 }
 
 type cacheKey struct {
@@ -76,10 +78,40 @@ func (*Instance) Type() interface{} {
 }
 
 // Start implements common.Runnable
-func (i *Instance) Start() error { return nil }
+func (i *Instance) Start() error {
+	if i.ttl <= 0 {
+		return nil
+	}
+	i.janitorCtx, i.janitorCancel = context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(i.ttl)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now()
+				i.cache.Range(func(key, value any) bool {
+					entry, ok := value.(*cacheEntry)
+					if !ok || now.After(entry.expiresAt) {
+						i.cache.Delete(key)
+					}
+					return true
+				})
+			case <-i.janitorCtx.Done():
+				return
+			}
+		}
+	}()
+	return nil
+}
 
 // Close implements common.Closable
-func (i *Instance) Close() error { return nil }
+func (i *Instance) Close() error {
+	if i.janitorCancel != nil {
+		i.janitorCancel()
+	}
+	return nil
+}
 
 func init() {
 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
@@ -189,7 +221,7 @@ func (i *Instance) Disconnect(credential string, connectionID string, ctx contex
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	disconnectCtx, cancel := context.WithTimeout(context.Background(), i.timeout)
+	disconnectCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	i.sendRequest(disconnectCtx, Request{
