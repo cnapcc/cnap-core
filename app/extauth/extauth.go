@@ -141,7 +141,9 @@ func (i *Instance) Connect(credential string, connectionID string, ctx context.C
 func (i *Instance) Watch(credential string, connectionID string, ctx context.Context) {
 	if i.heartbeat <= 0 {
 		<-ctx.Done()
-		i.Disconnect(credential, connectionID, ctx)
+		if i.disconnect {
+			i.Disconnect(credential, connectionID, ctx)
+		}
 		return
 	}
 
@@ -183,6 +185,10 @@ func (i *Instance) Disconnect(credential string, connectionID string, ctx contex
 	info := i.getConnectionInfo(ctx)
 
 	// Using old context results in immediate cancellation, so create a new context with timeout
+	timeout := i.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
 	disconnectCtx, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
