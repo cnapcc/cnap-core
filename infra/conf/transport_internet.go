@@ -230,13 +230,14 @@ type SplitHTTPConfig struct {
 	SeqKey               string            `json:"seqKey"`
 	UplinkDataPlacement  string            `json:"uplinkDataPlacement"`
 	UplinkDataKey        string            `json:"uplinkDataKey"`
-	UplinkChunkSize      uint32            `json:"uplinkChunkSize"`
+	UplinkChunkSize      Int32Range        `json:"uplinkChunkSize"`
 	NoGRPCHeader         bool              `json:"noGRPCHeader"`
 	NoSSEHeader          bool              `json:"noSSEHeader"`
 	ScMaxEachPostBytes   Int32Range        `json:"scMaxEachPostBytes"`
 	ScMinPostsIntervalMs Int32Range        `json:"scMinPostsIntervalMs"`
 	ScMaxBufferedPosts   int64             `json:"scMaxBufferedPosts"`
 	ScStreamUpServerSecs Int32Range        `json:"scStreamUpServerSecs"`
+	ServerMaxHeaderBytes int32             `json:"serverMaxHeaderBytes"`
 	Xmux                 XmuxConfig        `json:"xmux"`
 	DownloadSettings     *StreamConfig     `json:"downloadSettings"`
 	Extra                json.RawMessage   `json:"extra"`
@@ -316,9 +317,9 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 
 	switch c.UplinkDataPlacement {
 	case "":
-		c.UplinkDataPlacement = "body"
-	case "body":
-	case "cookie", "header":
+		c.UplinkDataPlacement = splithttp.PlacementAuto
+	case splithttp.PlacementAuto, splithttp.PlacementBody:
+	case splithttp.PlacementCookie, splithttp.PlacementHeader:
 		if c.Mode != "packet-up" {
 			return nil, errors.New("UplinkDataPlacement can be " + c.UplinkDataPlacement + " only in packet-up mode")
 		}
@@ -347,9 +348,6 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 	case "":
 		c.SeqPlacement = "path"
 	case "path", "cookie", "header", "query":
-		if c.SessionPlacement == "path" {
-			return nil, errors.New("SeqPlacement must be path when SessionPlacement is path")
-		}
 	default:
 		return nil, errors.New("unsupported seq placement: " + c.SeqPlacement)
 	}
@@ -372,24 +370,17 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		}
 	}
 
-	if c.UplinkDataPlacement != "body" && c.UplinkDataKey == "" {
+	if c.UplinkDataPlacement != splithttp.PlacementBody && c.UplinkDataKey == "" {
 		switch c.UplinkDataPlacement {
-		case "cookie":
+		case splithttp.PlacementCookie:
 			c.UplinkDataKey = "x_data"
-		case "header":
+		case splithttp.PlacementAuto, splithttp.PlacementHeader:
 			c.UplinkDataKey = "X-Data"
 		}
 	}
 
-	if c.UplinkChunkSize == 0 {
-		switch c.UplinkDataPlacement {
-		case "cookie":
-			c.UplinkChunkSize = 3 * 1024 // 3KB
-		case "header":
-			c.UplinkChunkSize = 4 * 1024 // 4KB
-		}
-	} else if c.UplinkChunkSize < 64 {
-		c.UplinkChunkSize = 64
+	if c.ServerMaxHeaderBytes < 0 {
+		return nil, errors.New("invalid negative value of maxHeaderBytes")
 	}
 
 	if c.Xmux.MaxConnections.To > 0 && c.Xmux.MaxConcurrency.To > 0 {
@@ -422,13 +413,14 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		SeqKey:               c.SeqKey,
 		UplinkDataPlacement:  c.UplinkDataPlacement,
 		UplinkDataKey:        c.UplinkDataKey,
-		UplinkChunkSize:      c.UplinkChunkSize,
+		UplinkChunkSize:      newRangeConfig(c.UplinkChunkSize),
 		NoGRPCHeader:         c.NoGRPCHeader,
 		NoSSEHeader:          c.NoSSEHeader,
 		ScMaxEachPostBytes:   newRangeConfig(c.ScMaxEachPostBytes),
 		ScMinPostsIntervalMs: newRangeConfig(c.ScMinPostsIntervalMs),
 		ScMaxBufferedPosts:   c.ScMaxBufferedPosts,
 		ScStreamUpServerSecs: newRangeConfig(c.ScStreamUpServerSecs),
+		ServerMaxHeaderBytes: c.ServerMaxHeaderBytes,
 		Xmux: &splithttp.XmuxConfig{
 			MaxConcurrency:   newRangeConfig(c.Xmux.MaxConcurrency),
 			MaxConnections:   newRangeConfig(c.Xmux.MaxConnections),
@@ -723,6 +715,11 @@ func (c *TLSCertConfig) Build() (*tls.Certificate, error) {
 	certificate.BuildChain = c.BuildChain
 
 	return certificate, nil
+}
+
+type QuicParamsConfig struct {
+	Congestion string    `json:"congestion"`
+	Up         Bandwidth `json:"up"`
 }
 
 type TLSConfig struct {
@@ -1422,8 +1419,9 @@ func (c *Mask) Build(tcp bool) (proto.Message, error) {
 }
 
 type FinalMask struct {
-	Tcp []Mask `json:"tcp"`
-	Udp []Mask `json:"udp"`
+	Tcp        []Mask            `json:"tcp"`
+	Udp        []Mask            `json:"udp"`
+	QuicParams *QuicParamsConfig `json:"quicParams"`
 }
 
 type StreamConfig struct {
@@ -1595,6 +1593,28 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 				return nil, errors.New("failed to build mask with type ", mask.Type).Base(err)
 			}
 			config.Udpmasks = append(config.Udpmasks, serial.ToTypedMessage(u))
+		}
+		if c.FinalMask.QuicParams != nil {
+			up, err := c.FinalMask.QuicParams.Up.Bps()
+			if err != nil {
+				return nil, err
+			}
+			if up > 0 && up < 65536 {
+				return nil, errors.New("Up must be at least 65536 bytes per second")
+			}
+			switch c.FinalMask.QuicParams.Congestion {
+			case "", "bbr", "reno":
+			case "force-brutal":
+				if up == 0 {
+					return nil, errors.New("force-brutal requires up")
+				}
+			default:
+				return nil, errors.New("unknown congestion control: ", c.FinalMask.QuicParams.Congestion, ", valid values: bbr, reno, force-brutal")
+			}
+			config.QuicParams = &internet.QuicParams{
+				Congestion: c.FinalMask.QuicParams.Congestion,
+				Up:         up,
+			}
 		}
 	}
 
