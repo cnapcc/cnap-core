@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -503,6 +504,7 @@ func TestVlessXtlsVisionReality(t *testing.T) {
 
 func TestVlessExtAuth(t *testing.T) {
 	// Track received events from extauth
+	var mu sync.Mutex
 	events := make(map[string]int) // type -> count
 
 	userID := protocol.NewID(uuid.New())
@@ -516,7 +518,9 @@ func TestVlessExtAuth(t *testing.T) {
 		eventType, _ := req["type"].(string)
 		credential, _ := req["credential"].(string)
 
+		mu.Lock()
 		events[eventType]++
+		mu.Unlock()
 
 		if eventType == "authorization" {
 			if credential != userID.String() {
@@ -630,8 +634,10 @@ func TestVlessExtAuth(t *testing.T) {
 	}
 	common.Must(errg.Wait())
 
+	mu.Lock()
 	authCount := events["authorization"]
 	connectCount := events["connect"]
+	mu.Unlock()
 
 	if authCount == 0 {
 		t.Error("expected at least 1 authorization request, got 0")
@@ -642,7 +648,10 @@ func TestVlessExtAuth(t *testing.T) {
 
 	// Scenario 2: second batch should use cache, no new authorization
 	time.Sleep(500 * time.Millisecond)
+
+	mu.Lock()
 	authBefore := events["authorization"]
+	mu.Unlock()
 
 	var errg2 errgroup.Group
 	for range 3 {
@@ -650,7 +659,9 @@ func TestVlessExtAuth(t *testing.T) {
 	}
 	common.Must(errg2.Wait())
 
+	mu.Lock()
 	authAfter := events["authorization"]
+	mu.Unlock()
 
 	if authAfter != authBefore {
 		t.Errorf("expected no new authorization requests (cache hit), got %d new", authAfter-authBefore)
@@ -662,8 +673,10 @@ func TestVlessExtAuth(t *testing.T) {
 	common.Must(errg3.Wait())
 	time.Sleep(5 * time.Second)
 
+	mu.Lock()
 	heartbeatCount := events["heartbeat"]
 	disconnectCount := events["disconnect"]
+	mu.Unlock()
 
 	if heartbeatCount == 0 {
 		t.Error("expected at least 1 heartbeat, got 0")
