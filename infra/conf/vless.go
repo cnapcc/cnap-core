@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/xtls/xray-core/app/extauth"
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/protocol"
@@ -35,6 +36,7 @@ type VLessInboundConfig struct {
 	Fallbacks  []*VLessInboundFallback `json:"fallbacks"`
 	Flow       string                  `json:"flow"`
 	Testseed   []uint32                `json:"testseed"`
+	ExtAuth    *ExtAuthConfig          `json:"extAuth"`
 }
 
 // Build implements Buildable
@@ -192,6 +194,14 @@ func (c *VLessInboundConfig) Build() (proto.Message, error) {
 		if fb.Xver > 2 {
 			return nil, errors.New(`VLESS fallbacks: invalid PROXY protocol version, "xver" only accepts 0, 1, 2`)
 		}
+	}
+
+	if c.ExtAuth != nil {
+		extAuth, err := c.ExtAuth.Build()
+		if err != nil {
+			return nil, err
+		}
+		config.ExtAuth = extAuth.(*extauth.Config)
 	}
 
 	return config, nil

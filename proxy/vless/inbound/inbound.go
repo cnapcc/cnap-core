@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/xtls/xray-core/app/dispatcher"
+	extauth "github.com/xtls/xray-core/app/extauth"
 	"github.com/xtls/xray-core/app/reverse"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
@@ -55,14 +56,25 @@ func init() {
 
 		c := config.(*Config)
 
-		validator := new(vless.MemoryValidator)
-		for _, user := range c.Clients {
-			u, err := user.ToMemoryUser()
+		// Replace validator if ExtAuth is configured
+		// Otherwise use default memory validator
+		var validator vless.Validator
+		if c.ExtAuth != nil && c.ExtAuth.Url != "" {
+			auth, err := extauth.New(ctx, c.ExtAuth)
 			if err != nil {
-				return nil, errors.New("failed to get VLESS user").Base(err).AtError()
+				return nil, err
 			}
-			if err := validator.Add(u); err != nil {
-				return nil, errors.New("failed to initiate user").Base(err).AtError()
+			validator = vless.NewExtAuthValidator(auth)
+		} else {
+			validator = new(vless.MemoryValidator)
+			for _, user := range c.Clients {
+				u, err := user.ToMemoryUser()
+				if err != nil {
+					return nil, errors.New("failed to get VLESS user").Base(err).AtError()
+				}
+				if err := validator.Add(u); err != nil {
+					return nil, errors.New("failed to initiate user").Base(err).AtError()
+				}
 			}
 		}
 
@@ -300,10 +312,16 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	napfb := h.fallbacks
 	isfb := napfb != nil
 
+	// Check if validator is ExtAuthValidator and add context if so
+	validatorWithCtx := h.validator
+	if extAuthValidator, ok := h.validator.(*vless.ExtAuthValidator); ok {
+		validatorWithCtx = extAuthValidator.WithContext(ctx)
+	}
+
 	if isfb && firstLen < 18 {
 		err = errors.New("fallback directly")
 	} else {
-		userSentID, request, requestAddons, isfb, err = encoding.DecodeRequestHeader(isfb, first, reader, h.validator)
+		userSentID, request, requestAddons, isfb, err = encoding.DecodeRequestHeader(isfb, first, reader, validatorWithCtx)
 	}
 
 	if err != nil {
