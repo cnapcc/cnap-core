@@ -21,8 +21,6 @@ type Instance struct {
 	notifyHeartbeat  time.Duration
 	notifyDisconnect bool
 	cache            sync.Map
-	janitorCtx       context.Context
-	janitorCancel    context.CancelFunc
 }
 
 type cacheKey struct {
@@ -68,7 +66,7 @@ func New(ctx context.Context, config *Config) (*Instance, error) {
 		notifications = &Notifications{}
 	}
 
-	return &Instance{
+	instance := &Instance{
 		url:              config.Url,
 		secret:           config.Secret,
 		timeout:          time.Duration(config.Timeout) * time.Second,
@@ -76,7 +74,33 @@ func New(ctx context.Context, config *Config) (*Instance, error) {
 		notifyConnect:    notifications.Connect,
 		notifyHeartbeat:  time.Duration(notifications.Heartbeat) * time.Second,
 		notifyDisconnect: notifications.Disconnect,
-	}, nil
+	}
+
+	if instance.ttl > 0 {
+		go instance.janitor(ctx)
+	}
+
+	return instance, nil
+}
+
+func (i *Instance) janitor(ctx context.Context) {
+	ticker := time.NewTicker(i.ttl)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			i.cache.Range(func(key, value any) bool {
+				entry, ok := value.(*cacheEntry)
+				if !ok || now.After(entry.expiresAt) {
+					i.cache.Delete(key)
+				}
+				return true
+			})
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // Type implements common.HasType
@@ -86,37 +110,11 @@ func (*Instance) Type() interface{} {
 
 // Start implements common.Runnable
 func (i *Instance) Start() error {
-	if i.ttl <= 0 {
-		return nil
-	}
-	i.janitorCtx, i.janitorCancel = context.WithCancel(context.Background())
-	go func() {
-		ticker := time.NewTicker(i.ttl)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				now := time.Now()
-				i.cache.Range(func(key, value any) bool {
-					entry, ok := value.(*cacheEntry)
-					if !ok || now.After(entry.expiresAt) {
-						i.cache.Delete(key)
-					}
-					return true
-				})
-			case <-i.janitorCtx.Done():
-				return
-			}
-		}
-	}()
 	return nil
 }
 
 // Close implements common.Closable
 func (i *Instance) Close() error {
-	if i.janitorCancel != nil {
-		i.janitorCancel()
-	}
 	return nil
 }
 
