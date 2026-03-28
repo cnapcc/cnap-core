@@ -2,7 +2,7 @@
 
 <p align="center">
     <b>
-    A feature-focused fork of <a href="https://github.com/XTLS/Xray-core">Xray-core</a> for developers and founders.<br>
+    A feature-focused fork of <a href="https://github.com/XTLS/Xray-core">Xray-core</a> for developers and enthusiasts.<br>
     Built on top of upstream releases and kept in close sync.
     </b>
 </p>
@@ -50,7 +50,7 @@
     </tr>
     <tr>
         <td>ExtAuth</td>
-        <td>Delegate user authentication to your own HTTP API</td>
+        <td>Authenticate users via HTTP API or CLI (Thanks to <a href="https://github.com/apernet/hysteria">Hysteria</a> for the idea)</td>
         <td>-</td>
         <td>🚧 In Progress</td>
     </tr>
